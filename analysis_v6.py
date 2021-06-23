@@ -257,7 +257,7 @@ def dist_main(num_days=False):
         print(f"month {month}")
         avg_size_of_x = projection_embedding['x'].mean()
         avg_size_of_y = projection_embedding['y'].mean()
-        projection_embedding_prime = ((R @ distance_embedding) * t) * ((avg_size_of_x + avg_size_of_y)/2)
+        projection_embedding_prime = ((R @ distance_embedding) * t)
         err = (projection_embedding_prime - projection_embedding).sum()
         print(f"x error: {err['x']/avg_size_of_x}")
         print(f"y error: {err['y']/avg_size_of_y}")
