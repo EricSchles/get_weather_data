@@ -177,6 +177,8 @@ def gen_month_col(df):
     df["month"] = pd.DatetimeIndex(df["date"]).month
     return df
 
+# cyclindrical projection is probably fine
+# 
 def lat_long_to_xy(df, station_list):
     p = Proj(
         proj='utm', zone=14,
@@ -192,7 +194,8 @@ def lat_long_to_xy(df, station_list):
     x, y = p(longitudes, latitudes)
     projection_embedding = pd.DataFrame()
     projection_embedding["x"] = x
-    projection_embedding["y"] = y 
+    projection_embedding["y"] = y
+    projection_embedding.index = station_list
     return projection_embedding
 
 def rigid_transform_2D(A, B):
@@ -206,24 +209,36 @@ def rigid_transform_2D(A, B):
     # if num_rows != 3:
     #     raise Exception(f"matrix B is not 3xN, it is {num_rows}x{num_cols}")
 
+
     # find mean column wise
-    centroid_A = np.mean(A, axis=1)
-    centroid_B = np.mean(B, axis=1)
+    centroid_A = np.mean(A, axis=0)
+    centroid_B = np.mean(B, axis=0)
 
     # ensure centroids are 3x1
-    centroid_A = centroid_A.reshape(-1, 1)
-    centroid_B = centroid_B.values.reshape(-1, 1)
+    centroid_A = centroid_A.reshape(-1, 1).T
+    #centroid_B = centroid_B.values.reshape(-1, 1).T
+    centroid_B = centroid_B.reshape(-1, 1).T
 
     # subtract mean
     Am = A - centroid_A
     Bm = B - centroid_B
 
-    H = Am @ np.transpose(Bm)
+    std_Am = Am.std()
+    std_Bm = Bm.std()
+    Am *= (1/std_Am)
+    Bm *= (1/std_Bm)
+    scale_factor = std_Bm/std_Am
+    
+    # multiplied backwards need to do 2x16 * 16x2 = 2x2
+    H = np.transpose(Bm) @ Am
+    print(H.shape)
 
     # find rotation
     U, S, Vt = np.linalg.svd(H)
     R = Vt.T @ U.T
-
+    print(R.shape)
+    #scalar = np.sqrt(np.mean(S))
+    
     # special reflection case
     if np.linalg.det(R) < 0:
         print("det(R) < R, reflection detected!, correcting for it ...")
@@ -231,9 +246,10 @@ def rigid_transform_2D(A, B):
         Vt[2,:] *= -1
         R = Vt.T @ U.T
 
-    t = -R @ centroid_A + centroid_B
-
-    return R, t
+    #t = (centroid_A @ -R + centroid_B) / scale_factor
+    t = (centroid_B -(centroid_A @ R)) / scale_factor
+    
+    return R, t, scale_factor
 
     
 def dist_main(num_days=False):
@@ -248,20 +264,49 @@ def dist_main(num_days=False):
         station_pairs = list(stations.keys())
         adjacency_matrix, distance_embedding = gen_graph_dist_embedding(stations, df)
         projection_embedding = lat_long_to_xy(df, list(adjacency_matrix.index))
-        R, t = rigid_transform_2D(distance_embedding, projection_embedding)
+        R, t, s = rigid_transform_2D(distance_embedding, projection_embedding)
         print(f"month {month}")
         avg_size_of_x = projection_embedding['x'].mean()
         avg_size_of_y = projection_embedding['y'].mean()
-        projection_embedding_prime = ((R @ distance_embedding) * t)
+        projection_embedding_prime = (distance_embedding @ R)
+        projection_embedding_prime *= s
+        projection_embedding_prime += t
         err = (projection_embedding_prime - projection_embedding).sum()
-        print(f"x error: {err['x']/avg_size_of_x}")
-        print(f"y error: {err['y']/avg_size_of_y}")
+        print(f"x error: {err['x']}")
+        print(f"y error: {err['y']}")
 # I need to sort by the stations to make sure we are doing a correct projection from temperature pairwise distances
 # to projections.  Otherwise this doesn't work.
 
 if __name__ == '__main__':
-    dist_main(num_days=False)
+    #dist_main(num_days=False)
 
+    np.random.seed(10)
+    A = np.random.random(size=32).reshape(16, 2)
+    #theta = (2 * np.pi) * np.random.random()
+    theta = 0
+    rotation_matrix = np.array([[np.cos(theta), -np.sin(theta)],[np.sin(theta), np.cos(theta)]])
+    #translation_vector = np.random.random(size=2).reshape(1, 2)
+    translation_vector = np.array([2, 3])
+    #scalar = np.random.randint(1, 2000)
+    scalar = 9
+    B = A @ rotation_matrix
+    B += translation_vector
+    B *= scalar
+    print(f"rotation matrix {rotation_matrix}")
+    print(f"translation vector {translation_vector}")
+    print(f"scale factor {scalar}")
+    # should be 3x3 with [0,0,1]
+    R, t, s = rigid_transform_2D(A, B)
+    diff_rot = R - rotation_matrix
+    diff_tras = t - translation_vector
+    diff_scale = scalar - s
+    print(f"R: {R}")
+    print(f"t: {t}")
+    print(f"s: {s}")
+    print(f"rotation matrix mae: {np.abs(diff_rot).mean()}")
+    print(f"translation matrix mae: {np.abs(diff_tras).mean()}")
+    print(f"scale diff: {np.abs(diff_scale)}")
+    
 # top one accuracy 0.5352941176470588
 # within one mile 0.9941176470588236
 
