@@ -181,14 +181,14 @@ def gen_month_col(df):
     df["month"] = pd.DatetimeIndex(df["date"]).month
     return df
 
-def lat_long_to_xy(df):
+def lat_long_to_xy(df, station_list):
     p = Proj(
         proj='utm', zone=10,
         ellps='WGS84', preserve_units=False
     )
     latitudes = []
     longitudes = []
-    for station in df["station"].unique():
+    for station in station_list:
         latitudes.append(df[df["station"] == station].iloc[0]["latitude"])
         longitudes.append(df[df["station"] == station].iloc[0]["longitude"])
     latitudes = np.array(latitudes)
@@ -252,12 +252,13 @@ def dist_main(num_days=False):
         stations = clip_stations(df, num_days=num_days)
         station_pairs = list(stations.keys())
         adjacency_matrix, distance_embedding = gen_graph_dist_embedding(stations, df)
-        projection_embedding = lat_long_to_xy(df)
+        projection_embedding = lat_long_to_xy(df, list(adjacency_matrix.index))
         R, t = rigid_transform_2D(distance_embedding, projection_embedding)
         print(f"month {month}")
-        err = (((R @ distance_embedding) * t) - projection_embedding).sum()
         avg_size_of_x = projection_embedding['x'].mean()
         avg_size_of_y = projection_embedding['y'].mean()
+        projection_embedding_prime = ((R @ distance_embedding) * t) * ((avg_size_of_x + avg_size_of_y)/2)
+        err = (projection_embedding_prime - projection_embedding).sum()
         print(f"x error: {err['x']/avg_size_of_x}")
         print(f"y error: {err['y']/avg_size_of_y}")
 # I need to sort by the stations to make sure we are doing a correct projection from temperature pairwise distances
