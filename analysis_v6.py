@@ -141,23 +141,19 @@ def clip_stations(final_df, num_days=False):
 def gen_graph_dist_embedding(stations, final_df):
     G = nx.Graph()
     [G.add_node(station) for station in final_df["station"].unique()]
-    inf_distance = 10000000
     for station_pair in stations:
         station_one, station_two = station_pair
         station_one_df, station_two_df = stations[station_pair]
         cols = station_one_df.columns.tolist()
         one_df = station_one_df["TMAX"].fillna(0)
         two_df = station_two_df["TMAX"].fillna(0)
-        if one_df.empty or two_df.empty:
-            G.add_edge(station_one, station_two, dist=inf_distance)
-        else:
-            try:
-                dist = distance_function(
-                    one_df, two_df
-                )
-                G.add_edge(station_one, station_two, dist=dist)
-            except:
-                G.add_edge(station_one, station_two, dist=inf_distance)
+        try:
+            dist = distance_function(
+                one_df, two_df
+            )
+            G.add_edge(station_one, station_two, dist=dist)
+        except:
+            pass
     adjacency_matrix = nx.to_pandas_adjacency(G, weight="dist", dtype=float)
     embedding = MDS(n_components=2, dissimilarity='precomputed', max_iter=500)
     distance_embedding = embedding.fit_transform(adjacency_matrix)
@@ -183,7 +179,7 @@ def gen_month_col(df):
 
 def lat_long_to_xy(df, station_list):
     p = Proj(
-        proj='utm', zone=10,
+        proj='utm', zone=14,
         ellps='WGS84', preserve_units=False
     )
     latitudes = []
@@ -242,7 +238,6 @@ def rigid_transform_2D(A, B):
     
 def dist_main(num_days=False):
     full_df = pd.read_csv("test_small.csv")
-
     full_df["date"] = pd.to_datetime(full_df["date"])
     full_df = filter_df(full_df)
     full_df = full_df.sort_values(by=["station", "date"])
